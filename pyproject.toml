@@ -1,0 +1,99 @@
+[project]
+name = "llmforge"
+version = "0.1.0"
+description = "Point at a folder, get a model. Repeatable pretraining and fine-tuning for DGX Spark."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+
+dependencies = [
+    # --- core numerics ---
+    "torch>=2.13.0",
+    "numpy>=2.1",
+    # --- config, cli, api ---
+    "pydantic>=2.9",
+    "pyyaml>=6.0",
+    "typer>=0.15",
+    "rich>=13.9",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "websockets>=13.1",
+    "python-multipart>=0.0.20",
+    # --- tokenization / models ---
+    "tokenizers>=0.21",
+    "transformers>=5.0",
+    "safetensors>=0.4.5",
+    "huggingface-hub>=0.26",
+    # --- corpus extraction (Phase 1) ---
+    "pypdf>=5.1",
+    "python-docx>=1.1",
+    "selectolax>=0.3.21",
+    "chardet>=5.2",
+    "gguf>=0.19",
+]
+
+[project.optional-dependencies]
+# Phase 3. Split out because bitsandbytes is the most aarch64-fragile dep we have;
+# a broken QLoRA wheel must not block the from-scratch path from installing.
+finetune = [
+    "peft>=0.20",
+    "trl>=1.9",
+    "datasets>=3.1",
+    "accelerate>=1.1",
+    "bitsandbytes>=0.45",
+]
+
+# flash-attn is faster than SDPA where it builds, and has no wheel for sm_121 aarch64.
+# Kept out of the default install so a machine that cannot build it still works; the
+# hardware profile detects it and the model uses it when present.
+flash = [
+    "flash-attn>=2.7; platform_machine == 'x86_64'",
+]
+
+[project.scripts]
+llmforge = "llmforge.cli:app"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.8",
+]
+
+# PyTorch's CUDA builds live on its own index rather than PyPI. cu130 is what the
+# GB10 (sm_121) requires and it also carries x86_64 wheels, so one index serves both.
+#
+# To install against a different CUDA — an older cluster on 12.4, say — point
+# LLMFORGE_TORCH_INDEX at that index and re-lock, or install torch yourself first and
+# run `uv sync --no-install-package torch`.
+[[tool.uv.index]]
+name = "pytorch-cu130"
+url = "https://download.pytorch.org/whl/cu130"
+explicit = true
+
+[tool.uv.sources]
+# Only CUDA-capable Linux needs the custom index; macOS and Windows CPU builds come
+# from PyPI, which keeps the project installable for planning and development work
+# on a laptop.
+torch = [
+    { index = "pytorch-cu130", marker = "sys_platform == 'linux'" },
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["llmforge"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+# B008: typer expresses argument metadata as call-in-default; that is the idiom.
+ignore = ["E501", "B008"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

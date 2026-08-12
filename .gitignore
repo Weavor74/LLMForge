@@ -1,0 +1,26 @@
+# All derived state: corpora, tokenizers, checkpoints, run registry.
+workspace/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+
+# Frontend
+web/node_modules/
+
+# web/dist is deliberately NOT ignored. It is a build artifact, which convention says
+# to exclude — but this is an application, not a library. Committing the built GUI
+# (~590 KB) means a clone runs immediately; excluding it would require Node and ~99 MB
+# of node_modules on every machine before the interface would appear at all.
+
+# Editors / OS
+.DS_Store
+*.swp
+
+# Per-machine tool settings, not project source. The "local" in the filename is the
+# convention for exactly this: it holds one developer's permission grants.
+.claude/settings.local.json
