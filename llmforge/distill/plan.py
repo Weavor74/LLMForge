@@ -17,7 +17,7 @@ from typing import Literal
 from llmforge.core import memory
 from llmforge.core.config import CorpusAnalysis, RunPlan
 from llmforge.core.hardware import Hardware
-from llmforge.core.planner import MAX_EPOCHS, TIERS, _ffn_dim, estimate_hours
+from llmforge.core.planner import MAX_EPOCHS, TIERS, _ffn_dim
 from llmforge.finetune.base import BaseModelInfo
 
 # Softening applied to both distributions before comparing them. Above 1 this exposes
@@ -34,9 +34,17 @@ DEFAULT_ALPHA = 0.7
 # teacher, or fine-tune it.
 MAX_STUDENT_FRACTION = 0.5
 
-# Distillation runs a full teacher forward pass alongside the student's forward and
-# backward, so a step costs more than plain pretraining of the same student.
-TEACHER_OVERHEAD = 1.4
+# Fraction of measured dense throughput a distillation step achieves. The teacher
+# runs inference-only, which is bandwidth-bound rather than compute-bound.
+DISTILL_MFU = 0.2
+
+# Dequantizing a 4-bit teacher on every forward costs roughly this much extra.
+QUANTIZED_TEACHER_PENALTY = 1.5
+
+# A cosine schedule spread over a couple of steps spends its whole life in warmup or
+# near-zero, so a short run learns nothing regardless of the rate. When the corpus is
+# smaller than one batch, shrink the batch rather than accept a one-step run.
+MIN_TOTAL_STEPS = 30
 
 
 class DistillPlan(RunPlan):
@@ -187,25 +195,31 @@ def plan_distill(
         total_memory_gb=max(1.0, hw.memory_gb - teacher_gb / memory.SAFE_UTILISATION),
     )
 
+    # Shrink the batch so the run gets a workable number of optimizer steps. On a
+    # small corpus the conventional batch — and sometimes a single micro-batch —
+    # exceeds the entire dataset, which produces a one-step run and a model that
+    # never moved. Memory allowed the larger batch; the data does not justify it.
+    affordable_micro = max(1, total_tokens // (seq_len * MIN_TOTAL_STEPS))
+    micro_batch = max(1, min(micro_batch, affordable_micro))
+
     tokens_per_micro = micro_batch * seq_len
-    grad_accum = max(1, round(tier.batch_tokens / tokens_per_micro))
+    batch_tokens = min(tier.batch_tokens, max(tokens_per_micro, total_tokens // MIN_TOTAL_STEPS))
+    grad_accum = max(1, round(batch_tokens / tokens_per_micro))
     tokens_per_step = tokens_per_micro * grad_accum
 
     total_steps = max(1, round(total_tokens / tokens_per_step))
     total_tokens = total_steps * tokens_per_step
     epochs = total_tokens / available_tokens
 
-    hours = estimate_hours(
-        n_params=n_params,
-        n_layer=tier.n_layer,
-        d_model=tier.d_model,
-        seq_len=seq_len,
-        total_tokens=total_tokens,
-        hw=hw,
-    ) * TEACHER_OVERHEAD
+    # The teacher's forward pass is the dominant cost whenever it is much larger than
+    # the student — which is the whole point of distilling. Estimating from the
+    # student alone understates the run by orders of magnitude.
+    teacher_flops = 2 * teacher.n_params * total_tokens
+    student_flops = 6 * n_params * total_tokens
+    achievable = hw.bf16_tflops * 1e12 * DISTILL_MFU * max(1, hw.n_gpus) * 0.9
+    hours = (teacher_flops + student_flops) / achievable / 3600
     if load_4bit:
-        # Dequantizing the teacher's weights on every forward pass is not free.
-        hours *= 1.5
+        hours *= QUANTIZED_TEACHER_PENALTY
 
     eval_every = max(1, total_steps // 20)
 
@@ -266,6 +280,23 @@ def _notes(plan: DistillPlan, teacher: BaseModelInfo, analysis: CorpusAnalysis) 
         f"makes the embedding table {plan.vocab_size * plan.d_model / 1e6:.0f}M "
         f"parameters on its own."
     )
+
+    teacher_share = (2 * teacher.n_params) / (2 * teacher.n_params + 6 * plan.n_params)
+    if teacher_share > 0.8:
+        notes.append(
+            f"{teacher_share:.0%} of the compute in this run is the teacher's forward "
+            f"pass, not the student's training — a {teacher.label} teacher is scored "
+            f"over every token, every epoch. If that time is unacceptable, have the "
+            f"teacher generate answers once and fine-tune the student on those instead."
+        )
+
+    embedding_share = plan.vocab_size * plan.d_model / plan.n_params
+    if embedding_share > 0.5:
+        notes.append(
+            f"{embedding_share:.0%} of the student is its embedding table, because it "
+            f"must share the teacher's {plan.vocab_size:,}-token vocabulary. Very "
+            f"little of this model is doing the actual reasoning."
+        )
 
     if ratio > 0.3:
         notes.append(

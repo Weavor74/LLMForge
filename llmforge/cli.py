@@ -789,6 +789,75 @@ def export(
         console.print(f"\n[dim]Run it:  ollama create mymodel -f Modelfile  # FROM {result.path}[/dim]")
 
 
+@app.command()
+def generate(
+    teacher: str = typer.Argument(..., help="Run id, Hugging Face id, or local model path."),
+    source: Path = typer.Option(
+        ..., "--from", "-f", help="Corpus folder, or a text file with one prompt per line."
+    ),
+    out: Path = typer.Option(..., "--out", "-o", help="Where to write the generated corpus."),
+    limit: int = typer.Option(None, "--limit", "-n", help="Use at most this many prompts."),
+    samples: int = typer.Option(
+        1, "--samples", "-s", help="Answers to generate per prompt."
+    ),
+    max_tokens: int = typer.Option(512, "--max-tokens"),
+    temperature: float = typer.Option(0.8, "--temperature", "-t"),
+    batch: int = typer.Option(8, "--batch", help="Prompts generated at once."),
+    system: str = typer.Option(None, "--system", help="System prompt for the teacher."),
+) -> None:
+    """Have a teacher write a training corpus, for distilling into a smaller model.
+
+    The teacher answers each prompt once; the result is a folder `create` can train on.
+    Unlike scoring the teacher on every token of every epoch, this pays for the teacher
+    a single time — and leaves the student free to use its own tokenizer.
+    """
+    from llmforge.distill import generate as gen
+
+    with console.status("[dim]collecting prompts...[/dim]", spinner="dots") as status:
+        try:
+            prompts = gen.prompts_from(source, limit=limit)
+        except (ValueError, NotADirectoryError, FileNotFoundError) as e:
+            console.print(f"[red]{e}[/red]")
+            raise typer.Exit(1) from e
+
+        total = len(prompts) * samples
+        status.update(f"[dim]loading {teacher}...[/dim]")
+
+        def on_progress(stage: str, done: int, all_: int) -> None:
+            status.update(f"[dim]{stage} {done:,}/{all_:,}[/dim]")
+
+        console.print(
+            f"{len(prompts):,} prompts x {samples} = [bold]{total:,}[/bold] answers to write"
+        )
+        try:
+            stats = gen.generate(
+                teacher, prompts, out,
+                samples_per_prompt=samples,
+                max_new_tokens=max_tokens,
+                temperature=temperature,
+                batch_size=batch,
+                system=system,
+                progress=on_progress,
+            )
+        except (ValueError, FileNotFoundError) as e:
+            console.print(f"[red]{e}[/red]")
+            raise typer.Exit(1) from e
+
+    table = Table(show_header=False, box=None, pad_edge=False)
+    table.add_column(style="dim", width=14)
+    table.add_column()
+    table.add_row("prompts", f"{stats.prompts:,}")
+    table.add_row("generated", f"[bold]{stats.generated:,}[/bold]")
+    table.add_row("rejected", f"{stats.rejected:,}")
+    for reason, count in stats.reasons.items():
+        table.add_row("", f"[dim]{count:,} {reason}[/dim]")
+
+    console.print()
+    console.print(table)
+    console.print(f"\n[dim]written to {out}[/dim]")
+    console.print(f"\nTrain on it:  [bold]llmforge create {out} --base <small model>[/bold]")
+
+
 @app.command(name="eval")
 def evaluate_run(
     run_id: str = typer.Argument("last", help="Run id, prefix, or 'last'."),

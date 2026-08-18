@@ -259,3 +259,15 @@ def test_notes_explain_the_shared_vocabulary():
 def test_instruction_corpus_gets_a_caveat():
     plan = make_plan(kind="instruction")
     assert any("teacher's responses" in n or "teacher's behaviour" in n for n in plan.notes)
+
+
+def test_small_corpus_still_gets_a_workable_number_of_steps():
+    """A batch larger than the whole corpus yields one optimizer step and a model
+    that never moved. Same defect class as the fine-tuning planner had."""
+    plan = make_plan(8_000_000_000, tokens=200_000)
+    assert plan.total_steps >= 5, f"only {plan.total_steps} steps"
+
+
+def test_large_corpus_keeps_the_conventional_batch():
+    plan = make_plan(8_000_000_000, tokens=500_000_000_000)
+    assert plan.tokens_per_step >= 32_768
