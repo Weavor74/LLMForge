@@ -122,11 +122,77 @@ def check_torch() -> Check:
     return Check("torch", "pass", detail, data)
 
 
+# Minimum NVIDIA driver for each CUDA major, on Linux. A torch wheel built against a
+# newer CUDA than the driver supports installs happily and then sees no GPU at all —
+# the single most confusing way this fails on a new machine.
+MIN_DRIVER = {12: 525, 13: 580}
+
+
+def nvidia_driver_version() -> str | None:
+    """The installed driver, from nvidia-smi. None if there is no driver at all."""
+    import subprocess
+
+    try:
+        result = subprocess.run(
+            ["nvidia-smi", "--query-gpu=driver_version", "--format=csv,noheader"],
+            capture_output=True, text=True, timeout=15,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    line = result.stdout.strip().splitlines()
+    return line[0].strip() if result.returncode == 0 and line else None
+
+
+def diagnose_missing_cuda() -> str:
+    """Work out *why* there is no usable GPU, rather than reporting that there isn't.
+
+    Three very different problems produce the same symptom, and the remedy differs
+    completely between them.
+    """
+    import torch
+
+    driver = nvidia_driver_version()
+    built_for = torch.version.cuda
+
+    if driver is None:
+        return (
+            "no NVIDIA driver found (nvidia-smi is absent or failed). This machine "
+            "either has no NVIDIA GPU, or the driver is not installed."
+        )
+
+    if not built_for:
+        return (
+            f"driver {driver} is present, but this is a CPU-only build of torch. "
+            f"Reinstall with a CUDA index, e.g. --index-url "
+            f"https://download.pytorch.org/whl/cu130"
+        )
+
+    major = int(built_for.split(".")[0])
+    needed = MIN_DRIVER.get(major)
+    try:
+        installed = int(driver.split(".")[0])
+    except ValueError:
+        installed = None
+
+    if needed and installed is not None and installed < needed:
+        suggestion = "cu126" if installed >= MIN_DRIVER[12] else "a newer driver"
+        return (
+            f"torch is built for CUDA {built_for}, which needs driver {needed}+, "
+            f"but this machine has {driver}. Either update the driver, or install "
+            f"torch from {suggestion} — run scripts/setup.sh, which picks for you."
+        )
+
+    return (
+        f"driver {driver} and torch for CUDA {built_for} look compatible, yet no "
+        f"device is visible. Check CUDA_VISIBLE_DEVICES, and that a GPU is present."
+    )
+
+
 def check_cuda() -> Check:
     import torch
 
     if not torch.cuda.is_available():
-        return _fail("cuda", "torch.cuda.is_available() is False — driver or wheel mismatch")
+        return _fail("cuda", diagnose_missing_cuda())
 
     name = torch.cuda.get_device_name(0)
     cap = torch.cuda.get_device_capability(0)
@@ -361,7 +427,7 @@ def run_checks(skip_compile: bool = False) -> list[Check]:
         import torch
 
         if not torch.cuda.is_available():
-            results.append(_fail("cuda", "torch.cuda.is_available() is False"))
+            results.append(_fail("cuda", diagnose_missing_cuda()))
             results.append(Check("gpu probes", "skip", "no CUDA device"))
         else:
             for check in GPU_CHECKS:

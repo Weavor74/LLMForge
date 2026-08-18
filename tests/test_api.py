@@ -302,3 +302,61 @@ def test_a_partial_final_line_is_retried_not_skipped():
     path.write_text(json.dumps({"step": 1}) + "\n" + json.dumps({"step": 2}) + "\n")
     more, offset = runner.read_metrics("retry", offset)
     assert [r["step"] for r in more] == [2] and offset == 2
+
+
+# --------------------------------------------------------------------------
+# portability: diagnosing a machine this was not built on
+# --------------------------------------------------------------------------
+
+
+def test_missing_driver_is_named_as_such(monkeypatch):
+    """The three causes of "no GPU" need different remedies, so they need different
+    messages. A wheel/driver mismatch installs cleanly and fails at the first CUDA
+    call, which is the most confusing way this goes wrong on a new machine."""
+    from llmforge import doctor
+
+    monkeypatch.setattr(doctor, "nvidia_driver_version", lambda: None)
+    assert "no NVIDIA driver" in doctor.diagnose_missing_cuda()
+
+
+def test_cpu_only_wheel_is_named_as_such(monkeypatch):
+    import torch
+
+    from llmforge import doctor
+
+    monkeypatch.setattr(doctor, "nvidia_driver_version", lambda: "550.54.15")
+    monkeypatch.setattr(torch.version, "cuda", None)
+    message = doctor.diagnose_missing_cuda()
+    assert "CPU-only build" in message
+    assert "index-url" in message
+
+
+def test_driver_too_old_names_the_versions_and_the_fix(monkeypatch):
+    import torch
+
+    from llmforge import doctor
+
+    # CUDA 13 needs driver 580+; this machine has a 12.x-era driver.
+    monkeypatch.setattr(doctor, "nvidia_driver_version", lambda: "535.104.05")
+    monkeypatch.setattr(torch.version, "cuda", "13.0")
+    message = doctor.diagnose_missing_cuda()
+    assert "580" in message and "535.104.05" in message
+    assert "cu126" in message, "should suggest a build this driver can run"
+
+
+def test_compatible_versions_point_elsewhere(monkeypatch):
+    """When driver and wheel agree, the cause is something else — usually a
+    CUDA_VISIBLE_DEVICES that hides everything."""
+    import torch
+
+    from llmforge import doctor
+
+    monkeypatch.setattr(doctor, "nvidia_driver_version", lambda: "580.159.03")
+    monkeypatch.setattr(torch.version, "cuda", "13.0")
+    assert "CUDA_VISIBLE_DEVICES" in doctor.diagnose_missing_cuda()
+
+
+def test_minimum_drivers_are_ordered():
+    from llmforge.doctor import MIN_DRIVER
+
+    assert MIN_DRIVER[13] > MIN_DRIVER[12]

@@ -45,12 +45,43 @@ training signal comes from.
 - [x] **Scale** — multi-GPU (DDP/FSDP), gradient checkpointing, 8-bit Adam, tiers to 5.8B
 - [x] **Portability** — hardware auto-detected and re-measured when the machine changes
 
-## Install it as an app
+## Install
 
 ```bash
-uv sync                       # Python side, exact versions from uv.lock
-uv run llmforge doctor        # check this machine can actually train
-uv run llmforge install-app   # add it to your applications menu
+git clone https://github.com/Weavor74/LLMForge.git && cd LLMForge
+bash scripts/setup.sh
+```
+
+That is the whole thing on any machine. The script inspects what it landed on, picks a
+torch build the driver can actually run, installs, and runs the preflight.
+
+**Nothing needs root.** `uv` goes to `~/.local/bin`, the virtual environment lives in
+the project directory, and every dependency is a wheel. The only system-level
+requirement is an NVIDIA driver, which is already present on any machine with GPUs.
+
+### Moving it to another machine
+
+Clone and run the setup script. Three things adapt on their own:
+
+- **Architecture.** The dependency set resolves on x86_64 and aarch64 alike; the
+  lockfile is universal rather than pinned to the machine that produced it.
+- **CUDA.** The lockfile pins a CUDA 13 build, which needs driver 580+. On an older
+  driver the script installs the cu126 build of the same torch version instead — the
+  code is identical, only the wheel differs.
+- **Hardware.** The planner measures the GPU it finds and re-measures automatically
+  when the fingerprint changes, so a workspace copied from elsewhere plans against the
+  machine it is on rather than the one it came from.
+
+A machine with no GPU still installs and runs. It can ingest a corpus, train a
+tokenizer and produce a full plan — it simply cannot train, and the preflight says so.
+
+If the preflight reports no CUDA, it tells you which of the three causes it is: no
+driver, a CPU-only wheel, or a driver too old for the build — with the fix for each.
+
+### As a desktop application
+
+```bash
+uv run llmforge install-app   # adds it to your applications menu
 ```
 
 `uv sync --extra finetune` additionally installs peft, trl and bitsandbytes, which the
