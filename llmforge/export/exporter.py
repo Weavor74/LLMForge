@@ -35,6 +35,26 @@ _GGUF_TYPES = {
 _TORCH_DTYPES = {"bf16": torch.bfloat16, "f16": torch.float16, "f32": torch.float32}
 
 
+def model_name(record: RunRecord, override: str | None = None) -> str:
+    """The name an exported model is filed under.
+
+    A run's own name if it has one, otherwise its id. Run ids are timestamps — fine
+    for identifying a run, useless for recognising a model six months later.
+    """
+    raw = override or record.name or record.id
+    return slugify(raw) or record.id
+
+
+def slugify(text: str) -> str:
+    """Reduce a name to something safe as a filename across platforms."""
+    kept = [c if (c.isalnum() or c in "-_.") else "-" for c in text.strip().lower()]
+    slug = "".join(kept)
+    # Collapse runs of separators, which arise from spaces and punctuation together.
+    while "--" in slug:
+        slug = slug.replace("--", "-")
+    return slug.strip("-.")
+
+
 @dataclass
 class ExportResult:
     path: Path
@@ -54,10 +74,12 @@ def export_run(
     quantization: str | None = None,
     checkpoint: str = "best",
     out_dir: Path | None = None,
+    name: str | None = None,
     progress=None,
 ) -> ExportResult:
     """Export a finished run. Returns where it landed."""
     record = registry.resolve(run_id)
+    label = model_name(record, name)
     level = find_level(fmt, quantization or _default_for(fmt))
 
     if level.needs_llama_cpp and llama_quantize_path() is None:
@@ -66,7 +88,7 @@ def export_run(
             f"Install llama.cpp, or choose a level LLMForge can produce itself."
         )
 
-    destination = out_dir or (paths.models_dir() / record.id)
+    destination = out_dir or (paths.models_dir() / label)
     destination.mkdir(parents=True, exist_ok=True)
 
     def report(stage: str) -> None:
@@ -85,7 +107,7 @@ def export_run(
         return ExportResult(model_dir, fmt, level.name, size)
 
     report("writing gguf")
-    gguf_path = _write_gguf(model_dir, destination, record, level.name)
+    gguf_path = _write_gguf(model_dir, destination, record, level.name, label)
 
     # The HF directory was only scaffolding for the GGUF conversion.
     if model_dir != destination and model_dir.name == "_hf":
@@ -183,14 +205,16 @@ def _materialise_scratch(
 # ---------------------------------------------------------------------------
 
 
-def _write_gguf(model_dir: Path, destination: Path, record: RunRecord, quant: str) -> Path:
+def _write_gguf(
+    model_dir: Path, destination: Path, record: RunRecord, quant: str, label: str
+) -> Path:
     """Write a GGUF file from a Llama-shaped HuggingFace directory."""
     import gguf
     import numpy as np
     from safetensors.torch import load_file
 
     cfg = json.loads((model_dir / "config.json").read_text())
-    name = f"{record.id}-{quant}.gguf"
+    name = f"{label}-{quant}.gguf"
 
     needs_llama_cpp = quant not in _GGUF_TYPES
     # k-quants are produced by llama.cpp from an f16 file, so write that first.
@@ -206,7 +230,8 @@ def _write_gguf(model_dir: Path, destination: Path, record: RunRecord, quant: st
     n_kv_head = cfg.get("num_key_value_heads", n_head)
     head_dim = cfg.get("head_dim") or cfg["hidden_size"] // n_head
 
-    writer.add_name(record.name or record.id)
+    # The name Ollama and llama.cpp display, which is not the filename.
+    writer.add_name(label)
     writer.add_context_length(cfg["max_position_embeddings"])
     writer.add_embedding_length(cfg["hidden_size"])
     writer.add_block_count(cfg["num_hidden_layers"])

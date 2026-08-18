@@ -581,6 +581,26 @@ def resume(
     _train_with_progress(lambda emit: forge.resume(record.id, emit=emit), TrainPlan(**record.plan))
 
 
+@app.command()
+def rename(
+    run_id: str = typer.Argument(..., help="Run id, prefix, or 'last'."),
+    name: str = typer.Argument(..., help="The new name."),
+) -> None:
+    """Name a run, or rename one. Exports use this name."""
+    from llmforge.core import registry
+    from llmforge.export.exporter import slugify
+
+    try:
+        record = registry.resolve(run_id)
+    except KeyError as e:
+        console.print(f"[red]{e}[/red]")
+        raise typer.Exit(1) from e
+
+    registry.update(record.id, name=name)
+    console.print(f"[green]Renamed.[/green] {record.id} is now [bold]{name}[/bold]")
+    console.print(f"  [dim]exports will be filed as {slugify(name)}-<quant>.gguf[/dim]")
+
+
 @app.command(name="runs")
 def list_runs(
     limit: int = typer.Option(20, "--limit", "-n"),
@@ -603,6 +623,7 @@ def list_runs(
 
     table = Table(box=None, pad_edge=False, header_style="bold")
     table.add_column("run")
+    table.add_column("name", style="cyan")
     table.add_column("status")
     table.add_column("progress", justify="right")
     table.add_column("val loss", justify="right")
@@ -614,6 +635,7 @@ def list_runs(
         colour = colours.get(r.status, "white")
         table.add_row(
             r.id,
+            r.name or "[dim]—[/dim]",
             f"[{colour}]{r.status}[/{colour}]",
             f"{r.progress:.0%}" if r.total_steps else "-",
             f"{r.best_val_loss:.4f}" if r.best_val_loss is not None else "-",
@@ -721,6 +743,9 @@ def export(
     ),
     checkpoint: str = typer.Option("best", "--checkpoint", help="'best' or 'last'."),
     out: Path = typer.Option(None, "--out", "-o", help="Where to write it."),
+    name: str = typer.Option(
+        None, "--name", help="Name the exported model. Defaults to the run's name."
+    ),
     list_levels: bool = typer.Option(
         False, "--list", help="Show the levels available and stop."
     ),
@@ -777,6 +802,7 @@ def export(
                 quantization=quantize,
                 checkpoint=checkpoint,
                 out_dir=out,
+                name=name,
                 progress=on_progress,
             )
         except (ValueError, FileNotFoundError) as e:
