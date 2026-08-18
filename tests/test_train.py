@@ -379,3 +379,16 @@ def test_multiple_shards_are_all_reachable():
         # Shard identity is recoverable from the value range.
         seen.update((int(v) // 5_000) for v in x[:, 0])
     assert seen == {0, 1, 2}
+
+
+def test_small_corpus_still_gets_a_workable_number_of_steps():
+    """Third home of this defect: a batch larger than the corpus yields one optimizer
+    step, a run that reports success, and a model that never moved. The fine-tuning
+    and distillation planners guard against it; this one did not."""
+    plan = plan_pretrain(analysis(200_000), vocab_size=4096, hw=HW, tier_name="micro")
+    assert plan.total_steps >= 5, f"only {plan.total_steps} steps"
+
+
+def test_large_corpus_keeps_the_conventional_batch():
+    plan = plan_pretrain(analysis(500_000_000_000), vocab_size=32768, hw=HW, tier_name="small")
+    assert plan.tokens_per_step >= 65_536

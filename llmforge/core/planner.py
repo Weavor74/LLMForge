@@ -28,6 +28,12 @@ TOKENS_PER_PARAM = 20
 # conventional ceiling before returns go sharply negative.
 MAX_EPOCHS = 4
 
+# A cosine schedule spread over a couple of steps never leaves warmup, so a run that
+# short learns nothing whatever the rate. When the data cannot fill the conventional
+# batch, shrink the batch rather than accept a one-step run. The same guard exists in
+# the fine-tuning and distillation planners.
+MIN_TOTAL_STEPS = 30
+
 # Fraction of measured dense TFLOP/s a real training loop achieves. Small models are
 # bandwidth-bound rather than compute-bound, so this is well under what the matmul
 # benchmark suggests. Refined from live measurements once a run starts.
@@ -218,8 +224,11 @@ def plan_pretrain(
 
     # Every rank consumes its own micro-batch, so the batch a step actually covers
     # scales with the number of devices.
+    micro_batch = max(1, min(micro_batch, total_tokens // (seq_len * MIN_TOTAL_STEPS * n_gpus) or 1))
     tokens_per_micro = micro_batch * seq_len * n_gpus
-    grad_accum = max(1, round(tier.batch_tokens / tokens_per_micro))
+
+    batch_tokens = min(tier.batch_tokens, max(tokens_per_micro, total_tokens // MIN_TOTAL_STEPS))
+    grad_accum = max(1, round(batch_tokens / tokens_per_micro))
     tokens_per_step = tokens_per_micro * grad_accum
 
     total_steps = max(1, round(total_tokens / tokens_per_step))

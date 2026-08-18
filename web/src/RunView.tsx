@@ -25,7 +25,7 @@ import {
   type RunDetail,
 } from './api'
 import { Button, Empty, ErrorBox, Field, Notes, Panel, Progress, Spinner, StatusBadge } from './components'
-import { Evaluate, Export } from './RunActions'
+import { Evaluate, Export, Rename } from './RunActions'
 
 export function RunView({ runId, onBack }: { runId: string; onBack: () => void }) {
   const [detail, setDetail] = useState<RunDetail | null>(null)
@@ -189,6 +189,11 @@ export function RunView({ runId, onBack }: { runId: string; onBack: () => void }
 
       {!active && current.status === 'completed' && (
         <>
+          <Rename
+            runId={current.id}
+            current={current.name}
+            onRenamed={(name) => setRun((r) => (r ? { ...r, name } : r))}
+          />
           <Chat runId={current.id} />
           <Evaluate runId={current.id} mode={current.mode} />
           <Export runId={current.id} nParams={detail?.plan?.n_params ?? detail?.plan?.base_params} />

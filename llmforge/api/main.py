@@ -28,6 +28,7 @@ from llmforge.jobs.spec import (
     ChatRequest,
     EvalRequest,
     ExportRequest,
+    RenameRequest,
     StartRequest,
 )
 
@@ -58,6 +59,34 @@ def health() -> dict:
 @app.get("/api/hardware")
 def get_hardware(refresh: bool = False) -> dict:
     return hardware.profile(refresh=refresh).to_dict()
+
+
+@app.get("/api/doctor")
+async def doctor(skip_compile: bool = True) -> dict:
+    """Run the preflight checks. Off the event loop — the probes are benchmarks."""
+    from llmforge import doctor as doc
+
+    def run() -> dict:
+        checks = doc.run_checks(skip_compile=skip_compile)
+        return {
+            "checks": [
+                {"name": c.name, "status": c.status, "detail": c.detail} for c in checks
+            ],
+            "environment": doc.collect_environment(checks),
+            "ok": not any(c.status == "fail" for c in checks),
+        }
+
+    return await asyncio.to_thread(run)
+
+
+@app.post("/api/runs/{run_id}/rename")
+def rename_run(run_id: str, request: RenameRequest) -> dict:
+    """Name a run. Exports are filed under this name."""
+    from llmforge.export.exporter import slugify
+
+    record = _resolve(run_id)
+    registry.update(record.id, name=request.name)
+    return {"ok": True, "name": request.name, "slug": slugify(request.name)}
 
 
 @app.get("/api/browse", response_model=BrowseResponse)
@@ -161,6 +190,8 @@ def _analyze_sync(request: AnalyzeRequest) -> dict:
             request.teacher,
             tier=request.tier,
             seq_len=request.seq_len,
+            temperature=request.temperature,
+            alpha=request.alpha,
             seed=request.seed,
             force=request.force,
         )
@@ -343,6 +374,7 @@ async def export_run(run_id: str, request: ExportRequest) -> dict:
             fmt=request.format,
             quantization=request.quantization,
             checkpoint=request.checkpoint,
+            name=request.name,
         )
     except (ValueError, FileNotFoundError) as e:
         raise HTTPException(400, str(e)) from e

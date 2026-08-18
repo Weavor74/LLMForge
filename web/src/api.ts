@@ -74,6 +74,10 @@ export interface Hardware {
   memory_gb: number
   compile_ok: boolean
   flash_sdpa: boolean
+  n_gpus: number
+  unified_memory: boolean
+  flash_attn: boolean
+  gpus: string[]
 }
 
 export interface RunSpec {
@@ -84,9 +88,24 @@ export interface RunSpec {
   vocab_size: number | null
   method: string | null
   epochs: number | null
+  lora_rank: number | null
+  temperature: number | null
+  alpha: number | null
   seq_len: number | null
   seed: number
   name: string | null
+}
+
+export interface DoctorCheck {
+  name: string
+  status: 'pass' | 'warn' | 'fail' | 'skip'
+  detail: string
+}
+
+export interface DoctorReport {
+  checks: DoctorCheck[]
+  environment: Record<string, unknown>
+  ok: boolean
 }
 
 export interface Proposal {
@@ -209,11 +228,24 @@ export const api = {
 
   exportLevels: () => request<ExportLevels>('/api/export/levels'),
 
-  exportRun: (id: string, format: string, quantization: string) =>
+  exportRun: (id: string, format: string, quantization: string, name?: string) =>
     request<ExportResult>(`/api/runs/${id}/export`, {
       method: 'POST',
-      body: JSON.stringify({ format, quantization, checkpoint: 'best' }),
+      body: JSON.stringify({
+        format,
+        quantization,
+        checkpoint: 'best',
+        name: name || null,
+      }),
     }),
+
+  rename: (id: string, name: string) =>
+    request<{ ok: boolean; slug: string }>(`/api/runs/${id}/rename`, {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    }),
+
+  doctor: () => request<DoctorReport>('/api/doctor'),
 
   evalRun: (id: string) =>
     request<EvalReport>(`/api/runs/${id}/eval`, {

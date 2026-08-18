@@ -139,10 +139,61 @@ function Metric({
   )
 }
 
+export function Rename({
+  runId,
+  current,
+  onRenamed,
+}: {
+  runId: string
+  current: string | null
+  onRenamed: (name: string) => void
+}) {
+  const [value, setValue] = useState(current ?? '')
+  const [saved, setSaved] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  async function save() {
+    if (!value.trim()) return
+    setBusy(true)
+    try {
+      const { slug } = await api.rename(runId, value.trim())
+      setSaved(slug)
+      onRenamed(value.trim())
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Panel title="Name">
+      <div className="space-y-2">
+        <div className="flex gap-2">
+          <input
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && !busy && save()}
+            placeholder="what is this model?"
+            className="min-w-0 flex-1 rounded-md border border-neutral-700 bg-neutral-950 px-3 py-1.5 text-sm outline-none focus:border-neutral-500"
+          />
+          <Button onClick={save} disabled={busy || !value.trim()}>
+            {busy ? 'Saving…' : 'Save'}
+          </Button>
+        </div>
+        <p className="text-xs text-neutral-500">
+          {saved
+            ? `Exports will be filed as ${saved}-<quant>.gguf`
+            : 'A run id is a timestamp. A name is what you will recognise later.'}
+        </p>
+      </div>
+    </Panel>
+  )
+}
+
 export function Export({ runId, nParams }: { runId: string; nParams?: number }) {
   const [levels, setLevels] = useState<ExportLevels | null>(null)
   const [format, setFormat] = useState<'gguf' | 'safetensors'>('gguf')
   const [quant, setQuant] = useState('')
+  const [name, setName] = useState('')
   const [result, setResult] = useState<ExportResult | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -170,7 +221,7 @@ export function Export({ runId, nParams }: { runId: string; nParams?: number }) 
     setError(null)
     setResult(null)
     try {
-      setResult(await api.exportRun(runId, format, quant))
+      setResult(await api.exportRun(runId, format, quant, name || undefined))
     } catch (e) {
       setError((e as Error).message)
     } finally {
@@ -210,6 +261,19 @@ export function Export({ runId, nParams }: { runId: string; nParams?: number }) 
             </select>
           </label>
         </div>
+
+        <label className="block text-sm">
+          <span className="mb-1 block text-neutral-400">Name</span>
+          <input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="defaults to the run's name"
+            className="w-full rounded border border-neutral-700 bg-neutral-950 px-2 py-1.5 text-sm outline-none focus:border-neutral-500"
+          />
+          <span className="mt-1 block text-xs text-neutral-600">
+            Becomes the filename and the name Ollama displays.
+          </span>
+        </label>
 
         {selected && (
           <p className="text-xs text-neutral-500">

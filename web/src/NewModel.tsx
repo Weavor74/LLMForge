@@ -9,6 +9,7 @@
 import { useState } from 'react'
 import { api, compact, duration, type Proposal } from './api'
 import { Button, ErrorBox, Field, Notes, Panel, Spinner } from './components'
+import { Advanced, EMPTY_ADVANCED, toRequest, type AdvancedConfig } from './Advanced'
 import { FolderPicker, type PickerMode } from './FolderPicker'
 
 type Mode = 'scratch' | 'finetune' | 'distill'
@@ -19,16 +20,12 @@ const MODES: readonly (readonly [Mode, string])[] = [
   ['distill', 'Distil a model'],
 ] as const
 
-const TIERS = ['auto', 'nano', 'micro', 'small', 'medium', 'large']
-const METHODS = ['auto', 'full', 'lora', 'qlora']
 
 export function NewModel({ onStarted }: { onStarted: (runId: string) => void }) {
   const [folder, setFolder] = useState('')
   const [model, setModel] = useState('')
   const [mode, setMode] = useState<Mode>('scratch')
-  const [tier, setTier] = useState('auto')
-  const [method, setMethod] = useState('auto')
-  const [name, setName] = useState('')
+  const [cfg, setCfg] = useState<AdvancedConfig>(EMPTY_ADVANCED)
   const [showAdvanced, setShowAdvanced] = useState(false)
   // Which field the picker is currently filling, if any.
   const [picking, setPicking] = useState<null | { field: 'folder' | 'model'; mode: PickerMode }>(
@@ -55,8 +52,7 @@ export function NewModel({ onStarted }: { onStarted: (runId: string) => void }) 
           folder,
           base: finetuning ? model : null,
           teacher: distilling ? model : null,
-          tier: !finetuning && tier !== 'auto' ? tier : null,
-          method: finetuning && method !== 'auto' ? method : null,
+          ...toRequest(cfg, mode),
         }),
       )
     } catch (e) {
@@ -71,7 +67,7 @@ export function NewModel({ onStarted }: { onStarted: (runId: string) => void }) 
     setStarting(true)
     setError(null)
     try {
-      const { run_id } = await api.start(proposal.spec, name || undefined)
+      const { run_id } = await api.start(proposal.spec, cfg.name || undefined)
       onStarted(run_id)
     } catch (e) {
       setError((e as Error).message)
@@ -160,46 +156,7 @@ export function NewModel({ onStarted }: { onStarted: (runId: string) => void }) 
             {showAdvanced ? '− ' : '+ '}Advanced
           </button>
 
-          {showAdvanced && (
-            <div className="grid gap-3 rounded-md border border-neutral-800 bg-neutral-950/50 p-3 sm:grid-cols-2">
-              <label className="text-sm">
-                <span className="mb-1 block text-neutral-400">Run name</span>
-                <input
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                  placeholder="optional label"
-                  className="w-full rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-sm outline-none focus:border-neutral-500"
-                />
-              </label>
-              {finetuning ? (
-                <label className="text-sm">
-                  <span className="mb-1 block text-neutral-400">Method</span>
-                  <select
-                    value={method}
-                    onChange={(e) => setMethod(e.target.value)}
-                    className="w-full rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-sm outline-none focus:border-neutral-500"
-                  >
-                    {METHODS.map((m) => (
-                      <option key={m}>{m}</option>
-                    ))}
-                  </select>
-                </label>
-              ) : (
-                <label className="text-sm">
-                  <span className="mb-1 block text-neutral-400">Model size</span>
-                  <select
-                    value={tier}
-                    onChange={(e) => setTier(e.target.value)}
-                    className="w-full rounded border border-neutral-700 bg-neutral-950 px-2 py-1 text-sm outline-none focus:border-neutral-500"
-                  >
-                    {TIERS.map((t) => (
-                      <option key={t}>{t}</option>
-                    ))}
-                  </select>
-                </label>
-              )}
-            </div>
-          )}
+          {showAdvanced && <Advanced cfg={cfg} onChange={setCfg} mode={mode} />}
 
           <div className="flex items-center gap-3">
             <Button variant="primary" onClick={analyse} disabled={!canAnalyse || analysing}>

@@ -27,6 +27,11 @@ class RunSpec(BaseModel):
     # fine-tuning overrides
     method: str | None = None
     epochs: float | None = None
+    lora_rank: int | None = None
+
+    # distillation overrides
+    temperature: float | None = None
+    alpha: float | None = None
 
     # shared
     seq_len: int | None = None
@@ -60,6 +65,9 @@ class AnalyzeRequest(BaseModel):
     tier: str | None = None
     method: str | None = None
     epochs: float | None = None
+    lora_rank: int | None = None
+    temperature: float | None = None
+    alpha: float | None = None
     seq_len: int | None = None
     vocab_size: int | None = None
     seed: int = 1337
@@ -73,6 +81,9 @@ class AnalyzeRequest(BaseModel):
             tier=self.tier,
             method=self.method,
             epochs=self.epochs,
+            lora_rank=self.lora_rank,
+            temperature=self.temperature,
+            alpha=self.alpha,
             seq_len=self.seq_len,
             vocab_size=self.vocab_size,
             seed=self.seed,
@@ -99,6 +110,11 @@ class ExportRequest(BaseModel):
     format: str = "gguf"
     quantization: str | None = None
     checkpoint: str = "best"
+    name: str | None = None
+
+
+class RenameRequest(BaseModel):
+    name: str
 
 
 class EvalRequest(BaseModel):
