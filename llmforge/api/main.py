@@ -90,6 +90,51 @@ def rename_run(run_id: str, request: RenameRequest) -> dict:
     return {"ok": True, "name": request.name, "slug": slugify(request.name)}
 
 
+# The help documents, in the order they are offered.
+HELP_PAGES = [
+    ("from-scratch", "Training from scratch"),
+    ("fine-tuning", "Fine-tuning"),
+    ("distilling", "Distilling"),
+]
+
+
+def _docs_dir() -> Path:
+    """Where the help documents live.
+
+    Beside the package when installed as a wheel, at the repository root when
+    running from a checkout.
+    """
+    package = Path(__file__).resolve().parent.parent  # llmforge/
+    installed = package / "docs"
+    return installed if installed.is_dir() else package.parent / "docs"
+
+
+@app.get("/api/help")
+def list_help() -> list[dict]:
+    """Which help documents exist. Only those actually present are offered."""
+    directory = _docs_dir()
+    return [
+        {"slug": slug, "title": title}
+        for slug, title in HELP_PAGES
+        if (directory / f"{slug}.md").exists()
+    ]
+
+
+@app.get("/api/help/{slug}")
+def get_help(slug: str) -> dict:
+    """One help document, as markdown."""
+    # Reject anything that could escape the docs directory.
+    if slug not in {s for s, _ in HELP_PAGES}:
+        raise HTTPException(404, f"no such help page: {slug}")
+
+    path = _docs_dir() / f"{slug}.md"
+    if not path.exists():
+        raise HTTPException(404, f"help page not installed: {slug}")
+
+    title = next(t for s_, t in HELP_PAGES if s_ == slug)
+    return {"slug": slug, "title": title, "markdown": path.read_text()}
+
+
 @app.get("/api/browse", response_model=BrowseResponse)
 def browse(path: str | None = None, mode: str = "corpus") -> BrowseResponse:
     """Server-side directory listing for the folder picker.

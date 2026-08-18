@@ -96,6 +96,11 @@ export interface RunSpec {
   name: string | null
 }
 
+export interface HelpPage {
+  slug: string
+  title: string
+}
+
 export interface DoctorCheck {
   name: string
   status: 'pass' | 'warn' | 'fail' | 'skip'
@@ -247,6 +252,10 @@ export const api = {
     }),
 
   doctor: () => request<DoctorReport>('/api/doctor'),
+
+  helpPages: () => request<HelpPage[]>('/api/help'),
+  helpPage: (slug: string) =>
+    request<{ slug: string; title: string; markdown: string }>(`/api/help/${slug}`),
 
   generate: (body: {
     teacher: string
