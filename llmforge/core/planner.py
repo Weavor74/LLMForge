@@ -64,6 +64,15 @@ TIERS: list[Tier] = [
     Tier(name="large",  n_layer=24, n_head=16, n_kv_head=8, d_model=2048, seq_len=2048, lr=2.0e-4, batch_tokens=524_288),
     Tier(name="xl",     n_layer=32, n_head=24, n_kv_head=8, d_model=3072, seq_len=4096, lr=1.5e-4, batch_tokens=1_048_576),
     Tier(name="xxl",    n_layer=32, n_head=32, n_kv_head=8, d_model=4096, seq_len=4096, lr=1.2e-4, batch_tokens=2_097_152),
+    # Frontier-scale shapes, following published models of each size. None of these
+    # fit on one device: they exist so the planner can size a run for a cluster and
+    # say plainly what it would take.
+    Tier(name="8b",     n_layer=44, n_head=32, n_kv_head=8, d_model=4096, seq_len=8192, lr=3.0e-4, batch_tokens=4_194_304),
+    Tier(name="12b",    n_layer=43, n_head=32, n_kv_head=8, d_model=5120, seq_len=8192, lr=3.0e-4, batch_tokens=4_194_304),
+    Tier(name="20b",    n_layer=51, n_head=48, n_kv_head=8, d_model=6144, seq_len=8192, lr=2.0e-4, batch_tokens=4_194_304),
+    Tier(name="40b",    n_layer=58, n_head=64, n_kv_head=8, d_model=8192, seq_len=8192, lr=1.5e-4, batch_tokens=8_388_608),
+    Tier(name="60b",    n_layer=77, n_head=64, n_kv_head=8, d_model=8704, seq_len=8192, lr=1.5e-4, batch_tokens=8_388_608),
+    Tier(name="80b",    n_layer=97, n_head=64, n_kv_head=8, d_model=8960, seq_len=8192, lr=1.2e-4, batch_tokens=16_777_216),
 ]
 
 

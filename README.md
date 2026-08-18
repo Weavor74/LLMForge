@@ -145,6 +145,42 @@ one. The planner then adapts three ways:
 - **What that costs.** Memory budgets follow the device — a dedicated card may be
   filled further than unified memory shared with your desktop.
 
+### What each size costs
+
+Training from scratch is bounded by two things, and memory is the easier one. These
+are Chinchilla-optimal token budgets (~20 per parameter) and this planner's own
+estimates, at a 32k vocabulary:
+
+| tier | params | tokens | ≈ text | train memory | 1x Spark | 8x H100 | 64x H100 |
+|---|---|---|---|---|---|---|---|
+| nano | 0.02B | 0.4B | 2 GB | 0.4 GB | 1h | — | — |
+| micro | 0.04B | 0.8B | 3 GB | 1 GB | 3h | — | — |
+| small | 0.10B | 2B | 8 GB | 2 GB | 20h | — | — |
+| medium | 0.32B | 6B | 25 GB | 5 GB | 9d | 3h | — |
+| large | 1.18B | 24B | 94 GB | 19 GB | 111d | 40h | 5h |
+| xl | 3.3B | 66B | 266 GB | 53 GB | 3y | 14d | 42h |
+| xxl | 5.8B | 116B | 464 GB | 93 GB | 10y | 66d | 8d |
+| **8b** | 7.9B | 159B | 635 GB | 127 GB | 21y | 142d | 18d |
+| **12b** | 12.0B | 241B | 963 GB | 193 GB | 46y | 309d | 39d |
+| **20b** | 20.1B | 402B | 1.6 TB | 322 GB | 125y | 2y | 104d |
+| **40b** | 40.2B | 805B | 3.2 TB | 644 GB | 477y | 9y | 396d |
+| **60b** | 60.3B | 1205B | 4.8 TB | 964 GB | 1060y | 19y | 2y |
+| **80b** | 80.2B | 1605B | 6.4 TB | 1.3 TB | 1871y | 34y | 4y |
+
+"Train memory" is optimizer state, gradients and fp32 master weights — the floor
+before a single activation, which is why everything from `8b` up needs FSDP across
+many devices simply to hold the model.
+
+Read the last three columns as the answer to "can I train a frontier model from
+scratch": on one Spark, nothing above `small` finishes in a week. Even 64 H100s put
+an 80B model four years away. Those runs are what a large lab spends months and
+millions of dollars on, and the arithmetic here is not pessimism — it is the same
+arithmetic they face.
+
+What this does mean: **everything up to `small` is a comfortable afternoon**, `medium`
+is a long weekend, and past that you are choosing between fine-tuning and distilling
+an existing large model, both of which reach a useful result in hours.
+
 The same corpus and tier, planned on three machines:
 
 | | 1.18B | 3.3B | 5.8B |

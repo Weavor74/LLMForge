@@ -36,7 +36,7 @@ export const EMPTY_ADVANCED: AdvancedConfig = {
   force: false,
 }
 
-const TIERS = ['auto', 'nano', 'micro', 'small', 'medium', 'large', 'xl', 'xxl']
+const TIERS = ['auto', 'nano', 'micro', 'small', 'medium', 'large', 'xl', 'xxl', '8b', '12b', '20b', '40b', '60b', '80b']
 const METHODS = ['auto', 'full', 'lora', 'qlora']
 
 /** Turn the form's strings into the JSON the API expects, dropping anything unset. */
