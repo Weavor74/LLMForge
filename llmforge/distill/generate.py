@@ -39,6 +39,7 @@ class GenerationStats:
     prompts: int = 0
     generated: int = 0
     rejected: int = 0
+    stopped: bool = False
     reasons: dict[str, int] = field(default_factory=dict)
 
     def reject(self, reason: str) -> None:
@@ -129,8 +130,14 @@ def generate(
     batch_size: int = DEFAULT_BATCH,
     system: str | None = None,
     progress=None,
+    should_stop=None,
 ) -> GenerationStats:
-    """Answer every prompt with the teacher, writing a corpus as it goes."""
+    """Answer every prompt with the teacher, writing a corpus as it goes.
+
+    `should_stop` is checked between batches. Generation can run for hours against a
+    large teacher, and the partial corpus written so far is perfectly usable — so a
+    stop is a legitimate outcome rather than a lost run.
+    """
     out_dir = Path(out_dir).expanduser()
     out_dir.mkdir(parents=True, exist_ok=True)
     output = out_dir / "generated.jsonl"
@@ -151,6 +158,10 @@ def generate(
 
     with output.open("w", encoding="utf-8") as handle:
         for start in range(0, len(work), batch_size):
+            if should_stop and should_stop():
+                stats.stopped = True
+                break
+
             batch = work[start : start + batch_size]
 
             rendered = [
@@ -221,6 +232,7 @@ def generate(
                 "system": system,
                 "generated": stats.generated,
                 "rejected": stats.rejected,
+                "stopped_early": stats.stopped,
                 "reasons": stats.reasons,
             },
             indent=2,

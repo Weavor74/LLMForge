@@ -97,6 +97,7 @@ export function RunView({ runId, onBack }: { runId: string; onBack: () => void }
   if (!current) return <Spinner label="loading run" />
 
   const active = current.status === 'running'
+  const generating = current.mode === 'generate'
 
   return (
     <div className="space-y-4">
@@ -137,26 +138,59 @@ export function RunView({ runId, onBack }: { runId: string; onBack: () => void }
       <Panel>
         <div className="mb-3 flex items-baseline justify-between text-sm">
           <span className="text-neutral-400">
-            step {current.step.toLocaleString()} / {current.total_steps.toLocaleString()}
+            {generating ? 'answer' : 'step'} {current.step.toLocaleString()} /{' '}
+            {current.total_steps.toLocaleString()}
           </span>
           <span className="text-neutral-500">
-            {compact(current.tokens_seen)} tokens · {duration(current.elapsed_s)}
+            {!generating && <>{compact(current.tokens_seen)} tokens · </>}
+            {duration(current.elapsed_s)}
             {active && metrics.length > 0 && <Eta metrics={metrics} />}
           </span>
         </div>
         <Progress value={current.progress} />
 
-        <dl className="mt-4 grid gap-x-8 sm:grid-cols-2">
-          <Field label="best val loss">
-            {current.best_val_loss !== null ? current.best_val_loss.toFixed(4) : '—'}
-          </Field>
-          <Field label="train loss">
-            {current.train_loss !== null ? current.train_loss.toFixed(4) : '—'}
-          </Field>
-          {detail?.plan?.mode && <PlanFields plan={detail.plan} />}
-        </dl>
+        {/* Loss and a plan belong to a training run; a generation job has neither. */}
+        {!generating && (
+          <dl className="mt-4 grid gap-x-8 sm:grid-cols-2">
+            <Field label="best val loss">
+              {current.best_val_loss !== null ? current.best_val_loss.toFixed(4) : '—'}
+            </Field>
+            <Field label="train loss">
+              {current.train_loss !== null ? current.train_loss.toFixed(4) : '—'}
+            </Field>
+            {detail?.plan?.mode && <PlanFields plan={detail.plan} />}
+          </dl>
+        )}
+        {generating && (
+          <dl className="mt-4 grid gap-x-8 sm:grid-cols-2">
+            <Field label="teacher">{current.base_model ?? '—'}</Field>
+            <Field label="prompts from">{current.corpus_root ?? '—'}</Field>
+          </dl>
+        )}
       </Panel>
 
+      {generating && (
+        <Panel title="What this produced">
+          <p className="text-sm text-neutral-400">
+            {current.step.toLocaleString()} of {current.total_steps.toLocaleString()} answers
+            written{current.status === 'cancelled' && ' before it was stopped'}.
+          </p>
+          {current.output_dir && (
+            <>
+              <p className="scroll-x mt-2 font-mono text-xs text-neutral-500">
+                {current.output_dir}
+              </p>
+              <p className="mt-3 text-sm text-neutral-500">
+                A partial corpus is still usable. Point{' '}
+                <span className="text-neutral-300">New model</span> at that folder to train
+                on it.
+              </p>
+            </>
+          )}
+        </Panel>
+      )}
+
+      {!generating && (
       <div className="grid gap-4 lg:grid-cols-2">
         <Panel title="Loss">
           <LossChart metrics={metrics} />
@@ -165,6 +199,7 @@ export function RunView({ runId, onBack }: { runId: string; onBack: () => void }
           <ThroughputChart metrics={metrics} />
         </Panel>
       </div>
+      )}
 
       {detail?.plan?.notes && detail.plan.notes.length > 0 && (
         <Panel title="What to expect">
@@ -187,7 +222,7 @@ export function RunView({ runId, onBack }: { runId: string; onBack: () => void }
         </Panel>
       )}
 
-      {!active && current.status === 'completed' && (
+      {!active && current.status === 'completed' && !generating && (
         <>
           <Rename
             runId={current.id}

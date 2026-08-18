@@ -52,7 +52,12 @@ def _log_file(run_dir: Path) -> Path:
 
 def start(spec: RunSpec) -> str:
     """Register a run and launch a worker for it. Returns the run id."""
-    mode = "distill" if spec.is_distill else "finetune" if spec.is_finetune else "pretrain"
+    mode = (
+        "generate" if spec.is_generate
+        else "distill" if spec.is_distill
+        else "finetune" if spec.is_finetune
+        else "pretrain"
+    )
 
     # The plan is not known until the worker derives it, so the id carries no tier
     # and the registry row is filled in once training begins.

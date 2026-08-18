@@ -71,6 +71,9 @@ def _start(run_id: str, spec: RunSpec) -> int:
 
     _log("preparing", folder=spec.folder, base=spec.base)
 
+    if spec.is_generate:
+        return _generate(run_id, spec)
+
     if spec.is_distill:
         proposal = forge.propose_distill(
             spec.folder,
@@ -137,6 +140,67 @@ def _relaunch_with_torchrun(run_id: str, n_gpus: int) -> int:
         "-m", "llmforge.jobs.worker", run_id,
     ]
     return subprocess.call(command, env={**os.environ, "LLMFORGE_LAUNCHED": "1"})
+
+
+def _generate(run_id: str, spec: RunSpec) -> int:
+    """Have a teacher write a corpus, reporting progress like a training run.
+
+    Progress maps onto the same step/total_steps the registry already tracks, so the
+    GUI's progress bar, cancellation and log streaming all work without special cases.
+    """
+    import signal
+
+    from llmforge.core import paths
+    from llmforge.distill import generate as gen
+
+    stopping = {"requested": False}
+
+    def on_signal(signum, frame):
+        stopping["requested"] = True
+
+    signal.signal(signal.SIGTERM, on_signal)
+    signal.signal(signal.SIGINT, on_signal)
+
+    _log("collecting prompts", source=spec.generate_from)
+    prompts = gen.prompts_from(spec.generate_from, limit=spec.prompt_limit)
+    total = len(prompts) * spec.samples_per_prompt
+
+    out_dir = paths.workspace() / "generated" / run_id
+    registry.update(run_id, status="running", total_steps=total)
+    _log("generating", teacher=spec.teacher, prompts=len(prompts), answers=total)
+
+    metrics = paths.run_dir(run_id) / "metrics.jsonl"
+
+    def on_progress(stage: str, done: int, all_: int) -> None:
+        registry.update(run_id, step=done)
+        # The GUI reads progress from metrics.jsonl exactly as it does for training.
+        with metrics.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps({"step": done, "generated": done}) + "\n")
+
+    stats = gen.generate(
+        spec.teacher,
+        prompts,
+        out_dir,
+        samples_per_prompt=spec.samples_per_prompt,
+        max_new_tokens=spec.max_new_tokens,
+        temperature=spec.temperature if spec.temperature is not None else 0.8,
+        top_p=spec.top_p,
+        batch_size=spec.batch_size,
+        system=spec.system,
+        progress=on_progress,
+        should_stop=lambda: stopping["requested"],
+    )
+
+    status = "cancelled" if stats.stopped else "completed"
+    registry.update(run_id, status=status, step=stats.generated)
+    _log(
+        "finished",
+        status=status,
+        generated=stats.generated,
+        rejected=stats.rejected,
+        out_dir=str(out_dir),
+    )
+    return 0
 
 
 def _adopt_plan(run_id: str, proposal) -> None:

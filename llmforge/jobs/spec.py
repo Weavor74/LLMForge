@@ -33,6 +33,16 @@ class RunSpec(BaseModel):
     temperature: float | None = None
     alpha: float | None = None
 
+    # generation: where the prompts come from. Its presence is what makes this a
+    # generation job rather than a training one.
+    generate_from: str | None = None
+    samples_per_prompt: int = 1
+    max_new_tokens: int = 512
+    top_p: float = 0.9
+    batch_size: int = 8
+    prompt_limit: int | None = None
+    system: str | None = None
+
     # shared
     seq_len: int | None = None
     seed: int = 1337
@@ -44,7 +54,11 @@ class RunSpec(BaseModel):
 
     @property
     def is_distill(self) -> bool:
-        return self.teacher is not None
+        return self.teacher is not None and self.generate_from is None
+
+    @property
+    def is_generate(self) -> bool:
+        return self.generate_from is not None
 
     def write(self, run_dir: Path) -> Path:
         path = run_dir / "spec.json"
@@ -115,6 +129,36 @@ class ExportRequest(BaseModel):
 
 class RenameRequest(BaseModel):
     name: str
+
+
+class GenerateRequest(BaseModel):
+    """Start a teacher writing a corpus."""
+
+    teacher: str
+    source: str
+    name: str | None = None
+    samples_per_prompt: int = 1
+    max_new_tokens: int = 512
+    temperature: float = 0.8
+    top_p: float = 0.9
+    batch_size: int = 8
+    limit: int | None = None
+    system: str | None = None
+
+    def to_spec(self) -> RunSpec:
+        return RunSpec(
+            folder=self.source,
+            teacher=self.teacher,
+            generate_from=self.source,
+            name=self.name,
+            samples_per_prompt=self.samples_per_prompt,
+            max_new_tokens=self.max_new_tokens,
+            temperature=self.temperature,
+            top_p=self.top_p,
+            batch_size=self.batch_size,
+            prompt_limit=self.limit,
+            system=self.system,
+        )
 
 
 class EvalRequest(BaseModel):

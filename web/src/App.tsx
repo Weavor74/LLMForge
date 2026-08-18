@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import { api, compact, duration, type Hardware, type Run } from './api'
 import { Empty, Panel, Progress, Spinner, StatusBadge } from './components'
+import { Generate } from './Generate'
 import { NewModel } from './NewModel'
 import { RunView } from './RunView'
 import { System } from './System'
@@ -11,6 +12,7 @@ type View =
   | { page: 'new' }
   | { page: 'runs' }
   | { page: 'run'; id: string }
+  | { page: 'generate' }
   | { page: 'system' }
 
 export default function App() {
@@ -31,6 +33,7 @@ export default function App() {
             {(
               [
                 ['new', 'New model'],
+                ['generate', 'Generate data'],
                 ['runs', 'Runs'],
                 ['system', 'System'],
               ] as const
@@ -65,6 +68,9 @@ export default function App() {
         {view.page === 'runs' && <RunList onOpen={(id) => setView({ page: 'run', id })} />}
         {view.page === 'run' && (
           <RunView runId={view.id} onBack={() => setView({ page: 'runs' })} />
+        )}
+        {view.page === 'generate' && (
+          <Generate onStarted={(id) => setView({ page: 'run', id })} />
         )}
         {view.page === 'system' && <System />}
       </main>

@@ -121,7 +121,7 @@ export type RunStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancel
 export interface Run {
   id: string
   name: string | null
-  mode: 'pretrain' | 'finetune' | 'distill'
+  mode: 'pretrain' | 'finetune' | 'distill' | 'generate'
   status: RunStatus
   created_at: string
   updated_at: string
@@ -140,6 +140,7 @@ export interface Run {
   tier?: string
   method?: string
   n_params?: number
+  output_dir?: string | null
 }
 
 export interface MetricRecord {
@@ -246,6 +247,21 @@ export const api = {
     }),
 
   doctor: () => request<DoctorReport>('/api/doctor'),
+
+  generate: (body: {
+    teacher: string
+    source: string
+    name?: string
+    samples_per_prompt?: number
+    max_new_tokens?: number
+    temperature?: number
+    batch_size?: number
+    limit?: number
+    system?: string
+  }) => request<{ run_id: string }>('/api/generate', {
+    method: 'POST',
+    body: JSON.stringify(body),
+  }),
 
   evalRun: (id: string) =>
     request<EvalReport>(`/api/runs/${id}/eval`, {

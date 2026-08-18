@@ -28,6 +28,7 @@ from llmforge.jobs.spec import (
     ChatRequest,
     EvalRequest,
     ExportRequest,
+    GenerateRequest,
     RenameRequest,
     StartRequest,
 )
@@ -247,6 +248,17 @@ def create_run(request: StartRequest) -> dict:
         raise HTTPException(400, f"not a directory: {spec.folder}")
 
     run_id = runner.start(spec)
+    return {"run_id": run_id}
+
+
+@app.post("/api/generate")
+def start_generation(request: GenerateRequest) -> dict:
+    """Start a teacher writing a corpus. Runs as a job, like training."""
+    source = Path(request.source).expanduser()
+    if not source.exists():
+        raise HTTPException(400, f"no such file or folder: {request.source}")
+
+    run_id = runner.start(request.to_spec())
     return {"run_id": run_id}
 
 
@@ -497,6 +509,11 @@ def _run_summary(record) -> dict:
         "base_model": record.base_model,
         "alive": runner.is_alive(record.id),
         # Enough of the plan for a list row, without shipping the whole thing.
+        "output_dir": (
+            str(paths.workspace() / "generated" / record.id)
+            if record.mode == "generate"
+            else None
+        ),
         "tier": record.plan.get("tier"),
         "method": record.plan.get("method"),
         "n_params": record.plan.get("n_params") or record.plan.get("base_params"),
